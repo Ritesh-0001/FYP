@@ -705,6 +705,10 @@ def capture_in(request):
 def capture_out(request):
     return render(request, 'recognition/capture_out.html')
 
+@ensure_csrf_cookie
+def capture_register(request):
+    return render(request, 'recognition/capture_register.html')
+
 def mark_your_attendance(request):
     if request.method == 'POST':
         data = json.loads(request.body.decode('utf-8'))
@@ -894,7 +898,7 @@ def mark_your_attendance_out(request):
             present[encoder.inverse_transform([i])[0]] = False
 
         # Resize the image to improve processing time
-        frame = imutils.resize(frame, width=800)
+        # frame = imutils.resize(frame, width=800)
         gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         faces = detector(gray_frame, 0)
 
@@ -909,7 +913,7 @@ def mark_your_attendance_out(request):
                     continue
                     
                 face_aligned = cv2.resize(face_region, (96, 96))
-                cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 1)
+                # cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 1)
                 
                 pred, prob = predict(face_aligned, svc)
 
@@ -921,7 +925,7 @@ def mark_your_attendance_out(request):
                         start[pred] = time.time()
                         count[pred] = count.get(pred, 0) + 1
 
-                    if count[pred] == 4 and (time.time()-start[pred]) > 1.5:
+                    if count[pred] == 4 and (time.time()-start[pred]) > 1.2:
                         count[pred] = 0
                     else:
                         present[pred] = True
@@ -929,23 +933,19 @@ def mark_your_attendance_out(request):
                         count[pred] = count.get(pred, 0) + 1
                         print(pred, present[pred], count[pred])
                     
-                    cv2.putText(frame, f"{person_name} {prob:.2f}", 
-                              (x+6, y+h-6), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+                    # cv2.putText(frame, f"{person_name} {prob:.2f}", 
+                    #           (x+6, y+h-6), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
                 else:
-                    cv2.putText(frame, "unknown", 
-                              (x+6, y+h-6), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
-            
+                    print("Unknown face detected")
             except Exception as e:
-                return JsonResponse({'status': 'error', 'message': 'error matching face'}, status=400)
-
-                
+                print(f"[WARNING] Face processing error: {str(e)}")
+                continue
 
         # For the current request, return the attendance result
         update_attendance_in_db_out(present)
         return JsonResponse({'status': 'success', 'message': 'Attendance marked out time'})
     
     return JsonResponse({'status': 'error', 'message': 'Invalid request'}, status=400)
-
 
 @login_required
 def train(request):

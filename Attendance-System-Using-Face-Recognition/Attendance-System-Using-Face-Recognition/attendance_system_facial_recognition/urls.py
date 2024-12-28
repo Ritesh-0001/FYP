@@ -62,6 +62,7 @@ urlpatterns = [
     path('dashboard/', recog_views.dashboard, name='dashboard'),
     path('train/', recog_views.train, name='train'),
     path('add_photos/', recog_views.add_photos, name='add-photos'),
+     path('capture_register', recog_views.capture_register, name='capture_register'),
     path('capture_in', recog_views.capture_in, name='capture_in'),
     path('capture_out', recog_views.capture_out, name='capture_out'),
     path('mark_your_attendance', recog_views.mark_your_attendance, name='mark-your-attendance'),
