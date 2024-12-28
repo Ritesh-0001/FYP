@@ -1,9 +1,7 @@
-
-
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Capture Attendance</title>
+    <title>Create Face Dataset with Augmentation</title>
     <style>
         body {
             display: flex;
@@ -11,6 +9,15 @@
             align-items: center;
             background: #f0f0f0;
             font-family: Arial, sans-serif;
+        }
+        h1 {
+            margin-top: 20px;
+        }
+        .info-text {
+            text-align: center;
+            color: #666;
+            margin: 10px 0;
+            font-size: 14px;
         }
         #capture {
             margin: 20px;
@@ -25,6 +32,10 @@
         }
         #capture:hover {
             background-color: #45a049;
+        }
+        #capture:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
         }
         #status {
             margin: 10px;
@@ -44,18 +55,57 @@
             display: none;
             margin: 10px;
         }
+        .progress {
+            margin: 20px 0;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .progress-container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin: 10px 0;
+            width: 80%;
+            max-width: 600px;
+        }
+        .progress-details {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            font-size: 14px;
+            color: #666;
+        }
     </style>
 </head>
 <body>
-    <h1>Mark Your In Attendance</h1>
+    <h1>Creating Dataset for: {{ username }}</h1>
+    <p class="info-text">We'll capture 10 base images and create variations to build a comprehensive dataset</p>
+    
     <video id="video" width="640" height="480" autoplay playsinline></video>
-    <button id="capture">Capture</button>
+    <button id="capture">Start Capturing</button>
     <div id="loading">Processing...</div>
     <div id="status"></div>
+    
+    <div class="progress-container">
+        <div class="progress">
+            Base images captured: <span id="sampleCount">0</span>/{{ sample_limit }}
+        </div>
+        <div class="progress-details">
+            <div>Total images (with augmentation): <span id="totalImages">0</span>/{{ target_samples }}</div>
+            <div>Status: <span id="captureStatus">Waiting to start...</span></div>
+        </div>
+    </div>
+    
     <canvas id="canvas" style="display:none;"></canvas>
 
     <script>
-        // Enhanced CSRF token handling
+        const username = "{{ username }}";
+        const sampleLimit = {{ sample_limit }};
+        const targetSamples = {{ target_samples }};
+        let isProcessing = false;
+        const csrftoken = getCookie('csrftoken');
+
         function getCookie(name) {
             let cookieValue = null;
             if (document.cookie && document.cookie !== '') {
@@ -71,15 +121,12 @@
             return cookieValue;
         }
 
-        // Get CSRF token immediately
-        const csrftoken = getCookie('csrftoken');
-
-        // Status handling functions
         function showStatus(message, isError = false) {
             const statusDiv = document.getElementById('status');
             statusDiv.textContent = message;
             statusDiv.style.display = 'block';
             statusDiv.className = isError ? 'error' : 'success';
+            document.getElementById('captureStatus').textContent = message;
         }
 
         function showLoading(show) {
@@ -87,7 +134,6 @@
             document.getElementById('capture').disabled = show;
         }
 
-        // Initialize camera with error handling
         async function initCamera() {
             try {
                 const constraints = {
@@ -97,89 +143,87 @@
                         facingMode: "user"
                     }
                 };
-                
                 const stream = await navigator.mediaDevices.getUserMedia(constraints);
                 const video = document.getElementById('video');
                 video.srcObject = stream;
                 await video.play();
                 document.getElementById('capture').disabled = false;
+                showStatus('Camera ready. Click Start Capturing to begin.');
+                
+                document.getElementById('capture').onclick = function() {
+                    this.style.display = 'none';
+                    showStatus('Capturing images...');
+                    captureFrames();
+                };
             } catch (err) {
-                console.error("Camera access error:", err);
                 showStatus("Camera access denied. Please ensure camera permissions are granted.", true);
                 document.getElementById('capture').disabled = true;
             }
         }
 
-        // Initialize the camera when page loads
-        document.addEventListener('DOMContentLoaded', initCamera);
-
-        // Capture and process image
-        document.getElementById('capture').addEventListener('click', async function() {
+        async function captureFrames() {
             const video = document.getElementById('video');
             const canvas = document.getElementById('canvas');
-            const captureButton = document.getElementById('capture');
+            const context = canvas.getContext('2d');
 
-            // Ensure video is ready
-            if (video.readyState !== video.HAVE_ENOUGH_DATA) {
-                showStatus("Video stream not ready. Please wait.", true);
-                return;
-            }
+            async function processFrame() {
+                if (!isProcessing) {
+                    isProcessing = true;
 
-            try {
-                showLoading(true);
-                
-                // Capture the image
-                canvas.width = video.videoWidth;
-                canvas.height = video.videoHeight;
-                const context = canvas.getContext('2d');
-                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                    try {
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
+                        context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-                // Prepare the data
-                const dataURL = canvas.toDataURL('image/png');
-                
-                // Send to server
-                const response = await fetch('/mark_your_attendance', {
-                    method: 'POST',
-                    credentials: 'same-origin',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': csrftoken
-                    },
-                    body: JSON.stringify({
-                        image: dataURL,
-                        timestamp: new Date().toISOString()
-                    })
-                });
-                
-                if (!response.ok) {
-                    throw new Error(`Server responded with ${response.status}`);
+                        const imageData = canvas.toDataURL('image/jpeg');
+
+                        const response = await fetch(window.location.href, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': csrftoken
+                            },
+                            body: JSON.stringify({ image: imageData })
+                        });
+
+                        const result = await response.json();
+
+                        if (result.success) {
+                            document.getElementById('sampleCount').textContent = result.sample_num;
+                            document.getElementById('totalImages').textContent = result.total_images;
+
+                            if (result.completed) {
+                                showStatus('Dataset collection and augmentation completed!');
+                                stopCapture();
+                                return;
+                            }
+                        } else if (result.error) {
+                            showStatus(result.error, true);
+                        }
+                    } catch (error) {
+                        console.error('Error:', error);
+                        showStatus('Error during capturing. Please try again.', true);
+                    } finally {
+                        isProcessing = false;
+                    }
                 }
 
-                const data = await response.json();
-                showStatus('Attendance marked successfully!');
-                console.log(data);
-                
-                // Clear session storage and redirect after a brief delay
-                setTimeout(() => {
-                    sessionStorage.removeItem('attendanceType');
-                    window.location.href = '/';
-                }, 1500);
-
-            } catch (error) {
-                console.error('Error:', error);
-                showStatus('Error marking attendance. Please try again.', true);
-            } finally {
-                showLoading(false);
+                requestAnimationFrame(processFrame);
             }
-        });
 
-        // Cleanup function
-        window.addEventListener('beforeunload', () => {
+            processFrame();
+        }
+
+        function stopCapture() {
             const video = document.getElementById('video');
             if (video.srcObject) {
                 video.srcObject.getTracks().forEach(track => track.stop());
             }
-        });
+            document.getElementById('captureStatus').textContent = 'Completed';
+        }
+
+        document.addEventListener('DOMContentLoaded', initCamera);
+        window.addEventListener('beforeunload', stopCapture);
     </script>
 </body>
 </html>

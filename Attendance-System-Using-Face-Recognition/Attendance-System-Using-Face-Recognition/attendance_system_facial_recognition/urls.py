@@ -59,10 +59,13 @@ from users import views as users_views
 
 urlpatterns = [
     path('', recog_views.home, name='home'),  # Add this line
+
     path('dashboard/', recog_views.dashboard, name='dashboard'),
     path('train/', recog_views.train, name='train'),
     path('add_photos/', recog_views.add_photos, name='add-photos'),
-     path('capture_register', recog_views.capture_register, name='capture_register'),
+    path('create_dataset/<str:username>/', recog_views.create_dataset_view, name='create_dataset'),
+    path('capture_register', recog_views.capture_register, name='capture_register'),
+    
     path('capture_in', recog_views.capture_in, name='capture_in'),
     path('capture_out', recog_views.capture_out, name='capture_out'),
     path('mark_your_attendance', recog_views.mark_your_attendance, name='mark-your-attendance'),

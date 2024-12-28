@@ -85,62 +85,317 @@ import imutils
 from imutils import face_utils
 from pathlib import Path
 
-def create_dataset(username: str, sample_limit: int = 300) -> None:
-    directory = Path('face_recognition_data/training_dataset') / str(username)
-    directory.mkdir(parents=True, exist_ok=True)
+# def create_dataset(username: str, sample_limit: int = 300) -> None:
+#     directory = Path('face_recognition_data/training_dataset') / str(username)
+#     directory.mkdir(parents=True, exist_ok=True)
     
-    predictor_path = Path('face_recognition_data/shape_predictor_68_face_landmarks.dat')
-    if not predictor_path.exists():
-        raise FileNotFoundError(f"Shape predictor file not found at {predictor_path}")
+#     predictor_path = Path('face_recognition_data/shape_predictor_68_face_landmarks.dat')
+#     if not predictor_path.exists():
+#         raise FileNotFoundError(f"Shape predictor file not found at {predictor_path}")
     
-    detector = dlib.get_frontal_face_detector()
-    predictor = dlib.shape_predictor(str(predictor_path))
+#     detector = dlib.get_frontal_face_detector()
+#     predictor = dlib.shape_predictor(str(predictor_path))
     
-    vs = VideoStream(src=0)
-    vs.start()
+#     vs = VideoStream(src=0)
+#     vs.start()
     
-    sample_num = 0
+#     sample_num = 0
     
-    try:
-        while sample_num <= sample_limit:
-            frame = vs.read()
-            if frame is None:
-                continue
+#     try:
+#         while sample_num <= sample_limit:
+#             frame = vs.read()
+#             if frame is None:
+#                 continue
                 
-            frame = imutils.resize(frame, width=800)
+#             frame = imutils.resize(frame, width=800)
+#             gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+#             faces = detector(gray_frame, 0)
+            
+#             for face in faces:
+#                 try:
+#                     x, y, w, h = face_utils.rect_to_bb(face)
+                    
+#                     # Direct face extraction instead of using FaceAligner
+#                     face_region = frame[y:y+h, x:x+w]
+#                     if face_region.size == 0:
+#                         continue
+                        
+#                     face_aligned = cv2.resize(face_region, (256, 256))
+                    
+#                     sample_num += 1
+#                     face_path = directory / f"{sample_num}.jpg"
+#                     cv2.imwrite(str(face_path), face_aligned)
+#                     cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                        
+#                 except Exception as e:
+#                     print(f"[WARNING] Face processing error: {str(e)}")
+#                     continue
+            
+#             cv2.imshow("Add Images", frame)
+#             key = cv2.waitKey(1) & 0xFF
+#             if key == ord('q'):
+#                 break
+                
+#     except KeyboardInterrupt:
+#         print("\n[INFO] Data collection stopped by user")
+#     finally:
+#         vs.stop()
+#         cv2.destroyAllWindows()
+
+from django.shortcuts import render
+from django.http import JsonResponse
+from pathlib import Path
+import dlib
+import cv2
+import base64
+import numpy as np
+from imutils import face_utils
+import json
+from PIL import Image
+import io
+
+
+# Original working code
+
+# def create_dataset(request, username: str, sample_limit: int = 300):
+#     """
+#     Handles dataset creation for a given username. Supports GET for template rendering and POST for processing images.
+#     """
+#     # Validate if the username exists before proceeding
+#     if not username_present(username):
+#         return redirect('dashboard')
+
+#     if request.method == 'GET':
+#         # Ensure the template path exists before rendering
+#         template_path = Path('recognition/templates/recognition/capture_register.html')
+#         if not template_path.exists():
+#             return JsonResponse({
+#                 'success': False,
+#                 'error': f"Template not found at {template_path}. Please verify its location."
+#             })
+
+#         # Initialize session variable for tracking progress
+#         request.session['sample_num'] = 0
+#         return render(request, 'recognition/capture_register.html', {
+#             'username': username,
+#             'sample_limit': sample_limit
+#         })
+
+#     elif request.method == 'POST':
+#         try:
+#             # Retrieve the current sample count from the session
+#             sample_num = request.session.get('sample_num', 0)
+
+#             # If sample limit reached, return appropriate response
+#             if sample_num >= sample_limit:
+#                 return JsonResponse({
+#                     'success': False,
+#                     'error': 'Sample limit reached',
+#                     'completed': True
+#                 })
+
+#             # Set up directories and model paths
+#             directory = Path('face_recognition_data/training_dataset') / str(username)
+#             directory.mkdir(parents=True, exist_ok=True)
+
+#             predictor_path = Path('face_recognition_data/shape_predictor_68_face_landmarks.dat')
+#             if not predictor_path.exists():
+#                 raise FileNotFoundError(f"Shape predictor file not found at {predictor_path}")
+
+#             # Initialize dlib's face detector and shape predictor
+#             detector = dlib.get_frontal_face_detector()
+#             predictor = dlib.shape_predictor(str(predictor_path))
+
+#             # Decode the received image data
+#             data = json.loads(request.body)
+#             image_data = data.get('image')
+
+#             if not image_data:
+#                 raise ValueError("No image data received.")
+
+#             # Convert base64 to image
+#             image_data = image_data.split(',')[1]
+#             image_bytes = base64.b64decode(image_data)
+#             image = Image.open(io.BytesIO(image_bytes))
+#             frame = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+
+#             # Process the frame
+#             frame = cv2.resize(frame, (800, 600))
+#             gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+#             faces = detector(gray_frame, 0)
+
+#             faces_processed = []
+#             for face in faces:
+#                 try:
+#                     x, y, w, h = face_utils.rect_to_bb(face)
+
+#                     # Extract and save face region
+#                     face_region = frame[y:y + h, x:x + w]
+#                     if face_region.size == 0:
+#                         continue
+
+#                     face_aligned = cv2.resize(face_region, (256, 256))
+#                     sample_num += 1
+#                     face_path = directory / f"{sample_num}.jpg"
+#                     cv2.imwrite(str(face_path), face_aligned)
+
+#                     faces_processed.append({
+#                         'x': x, 'y': y, 'width': w, 'height': h
+#                     })
+
+#                     # Update session with the current sample count
+#                     request.session['sample_num'] = sample_num
+
+#                 except Exception as e:
+#                     print(f"[WARNING] Face processing error: {str(e)}")
+#                     continue
+
+#             return JsonResponse({
+#                 'success': True,
+#                 'sample_num': sample_num,
+#                 'faces_processed': faces_processed,
+#                 'completed': sample_num >= sample_limit
+#             })
+
+#         except Exception as e:
+#             return JsonResponse({
+#                 'success': False,
+#                 'error': str(e)
+#             })
+
+# end original working code
+
+import cv2
+import numpy as np
+from pathlib import Path
+import dlib
+from PIL import Image
+import io
+import json
+import base64
+from imutils import face_utils
+from albumentations import (
+    Compose, RandomBrightnessContrast, GaussNoise, 
+    HorizontalFlip, Rotate, RandomGamma, Blur
+)
+
+def create_dataset(request, username: str, base_samples: int = 10, target_samples: int = 300):
+    """
+    Handles dataset creation with image augmentation. Takes fewer base images and 
+    creates more samples through augmentation. Saves files with sequential numbering.
+    """
+    if not username_present(username):
+        return redirect('dashboard')
+
+    if request.method == 'GET':
+        template_path = Path('recognition/templates/recognition/capture_register.html')
+        if not template_path.exists():
+            return JsonResponse({
+                'success': False,
+                'error': f"Template not found at {template_path}. Please verify its location."
+            })
+
+        request.session['sample_num'] = 0
+        request.session['total_images'] = 0
+        return render(request, 'recognition/capture_register.html', {
+            'username': username,
+            'sample_limit': base_samples,
+            'target_samples': target_samples
+        })
+
+    elif request.method == 'POST':
+        try:
+            sample_num = request.session.get('sample_num', 0)
+            total_images = request.session.get('total_images', 0)
+
+            # Check if we've reached the base sample limit
+            if sample_num >= base_samples:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Base sample limit reached',
+                    'completed': True
+                })
+
+            directory = Path('face_recognition_data/training_dataset') / str(username)
+            directory.mkdir(parents=True, exist_ok=True)
+
+            predictor_path = Path('face_recognition_data/shape_predictor_68_face_landmarks.dat')
+            if not predictor_path.exists():
+                raise FileNotFoundError(f"Shape predictor file not found at {predictor_path}")
+
+            detector = dlib.get_frontal_face_detector()
+
+            # Process image data
+            data = json.loads(request.body)
+            image_data = data.get('image', '').split(',')[1]
+            image_bytes = base64.b64decode(image_data)
+            image = Image.open(io.BytesIO(image_bytes))
+            frame = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+            frame = cv2.resize(frame, (800, 600))
             gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             faces = detector(gray_frame, 0)
-            
+
+            # Define augmentation pipeline
+            augmentor = Compose([
+                HorizontalFlip(p=0.5),
+                RandomBrightnessContrast(p=0.7),
+                GaussNoise(p=0.3),
+                Rotate(limit=15, p=0.5),
+                RandomGamma(p=0.3),
+                Blur(blur_limit=3, p=0.3),
+            ])
+
+            faces_processed = []
             for face in faces:
                 try:
                     x, y, w, h = face_utils.rect_to_bb(face)
-                    
-                    # Direct face extraction instead of using FaceAligner
-                    face_region = frame[y:y+h, x:x+w]
+                    face_region = frame[y:y + h, x:x + w]
                     if face_region.size == 0:
                         continue
-                        
+
                     face_aligned = cv2.resize(face_region, (256, 256))
                     
+                    # Save original image with sequential numbering
+                    total_images += 1
+                    image_path = directory / f"{total_images}.jpg"
+                    cv2.imwrite(str(image_path), face_aligned)
+                    
+                    # Generate augmented versions
+                    augmentations_per_image = (target_samples - base_samples) // base_samples
+                    
+                    for _ in range(augmentations_per_image):
+                        augmented = augmentor(image=face_aligned)['image']
+                        total_images += 1
+                        aug_path = directory / f"{total_images}.jpg"
+                        cv2.imwrite(str(aug_path), augmented)
+
+                    faces_processed.append({
+                        'x': x, 'y': y, 'width': w, 'height': h
+                    })
+
                     sample_num += 1
-                    face_path = directory / f"{sample_num}.jpg"
-                    cv2.imwrite(str(face_path), face_aligned)
-                    cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-                        
+                    request.session['sample_num'] = sample_num
+                    request.session['total_images'] = total_images
+
                 except Exception as e:
                     print(f"[WARNING] Face processing error: {str(e)}")
                     continue
-            
-            cv2.imshow("Add Images", frame)
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord('q'):
-                break
-                
-    except KeyboardInterrupt:
-        print("\n[INFO] Data collection stopped by user")
-    finally:
-        vs.stop()
-        cv2.destroyAllWindows()
+
+            return JsonResponse({
+                'success': True,
+                'sample_num': sample_num,
+                'total_images': total_images,
+                'faces_processed': faces_processed,
+                'completed': sample_num >= base_samples
+            })
+
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            })
+
+
 
 def predict(face_aligned, svc, threshold: float = 0.7) -> tuple:
     if face_aligned is None:
@@ -558,29 +813,70 @@ def dashboard(request):
 
 		return render(request,'recognition/employee_dashboard.html')
 
-@login_required
-def add_photos(request):
-	if request.user.username!='admin':
-		return redirect('not-authorised')
-	if request.method=='POST':
-		form=usernameForm(request.POST)
-		data = request.POST.copy()
-		username=data.get('username')
-		if username_present(username):
-			create_dataset(username)
-			messages.success(request, f'Dataset Created')
-			return redirect('add-photos')
-		else:
-			messages.warning(request, f'No such username found. Please register employee first.')
-			return redirect('dashboard')
+# @login_required
+# def add_photos(request):
+# 	if request.user.username!='admin':
+# 		return redirect('not-authorised')
+# 	if request.method=='POST':
+# 		form=usernameForm(request.POST)
+# 		data = request.POST.copy()
+# 		username=data.get('username')
+# 		if username_present(username):
+# 			create_dataset(username)
+# 			messages.success(request, f'Dataset Created')
+# 			return redirect('add-photos')
+# 		else:
+# 			messages.warning(request, f'No such username found. Please register employee first.')
+# 			return redirect('dashboard')
 
 
-	else:
+# 	else:
 		
 
-			form=usernameForm()
-			return render(request,'recognition/add_photos.html', {'form' : form})
+# 			form=usernameForm()
+# 			return render(request,'recognition/add_photos.html', {'form' : form})
 
+from django.shortcuts import render, redirect
+from django.contrib import messages
+from django.contrib.auth.decorators import login_required
+from .forms import usernameForm
+from .utils import username_present
+from django.urls import reverse
+
+@login_required
+def add_photos(request):
+    if request.user.username != 'admin':
+        return redirect('not-authorised')
+        
+    if request.method == 'POST':
+        form = usernameForm(request.POST)
+        if form.is_valid():
+            username = form.cleaned_data['username']
+            if username_present(username):
+                # Instead of directly calling create_dataset,
+                # redirect to the dataset creation page
+                dataset_url = reverse('create_dataset', kwargs={'username': username})
+                return redirect(dataset_url)
+            else:
+                messages.warning(request, 'No such username found. Please register employee first.')
+                return redirect('dashboard')
+    else:
+        form = usernameForm()
+        return render(request, 'recognition/add_photos.html', {'form': form})
+
+def create_dataset_view(request, username):
+    """
+    View to handle dataset creation process
+    """
+    if request.user.username != 'admin':
+        return redirect('not-authorised')
+        
+    if not username_present(username):
+        messages.warning(request, 'No such username found. Please register employee first.')
+        return redirect('dashboard')
+    
+    # This will either render the capture page (GET) or process captured images (POST)
+    return create_dataset(request, username)
 
 
 import cv2
