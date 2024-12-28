@@ -1,0 +1,252 @@
+<!-- <!DOCTYPE html>
+<html>
+<head>
+    <title>Capture Attendance</title>
+    <script>
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    // Does this cookie string begin with the name we want?
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+        const csrftoken = getCookie('csrftoken');
+    </script>
+</head> 
+<body>
+    <h1>Mark Your Attendance</h1>
+    <video id="video" width="640" height="480" autoplay></video>
+    <button id="capture">Capture</button>
+    <canvas id="canvas" style="display:none;"></canvas>
+
+    <script>
+        // Access the camera
+        navigator.mediaDevices.getUserMedia({ video: true })
+            .then(function(stream) {
+                var video = document.getElementById('video');
+                video.srcObject = stream;
+                video.play();
+            })
+            .catch(function(err) {
+                console.log("An error occurred: " + err);
+            });
+
+        // Capture the image
+        document.getElementById('capture').addEventListener('click', function() {
+            var canvas = document.getElementById('canvas');
+            var video = document.getElementById('video');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            var context = canvas.getContext('2d');
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            // Send the image to the server
+            var dataURL = canvas.toDataURL('image/png');
+            fetch('/mark_your_attendance', {
+                method: 'POST',
+                body: JSON.stringify({ image: dataURL }),
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrftoken
+                }
+            }).then(response => response.json())
+              .then(data => console.log(data))
+              .catch(error => console.error('Error:', error));
+        });
+    </script>
+</body>
+</html> -->
+
+
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Capture Attendance</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background: #f0f0f0;
+            font-family: Arial, sans-serif;
+        }
+        #capture {
+            margin: 20px;
+            padding: 10px 20px;
+            font-size: 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        #capture:hover {
+            background-color: #45a049;
+        }
+        #status {
+            margin: 10px;
+            padding: 10px;
+            border-radius: 5px;
+            display: none;
+        }
+        .error {
+            background-color: #ffebee;
+            color: #c62828;
+        }
+        .success {
+            background-color: #e8f5e9;
+            color: #2e7d32;
+        }
+        #loading {
+            display: none;
+            margin: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Mark Your Out Attendance</h1>
+    <video id="video" width="640" height="480" autoplay playsinline></video>
+    <button id="capture">Capture</button>
+    <div id="loading">Processing...</div>
+    <div id="status"></div>
+    <canvas id="canvas" style="display:none;"></canvas>
+
+    <script>
+        // Enhanced CSRF token handling
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+
+        // Get CSRF token immediately
+        const csrftoken = getCookie('csrftoken');
+
+        // Status handling functions
+        function showStatus(message, isError = false) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.style.display = 'block';
+            statusDiv.className = isError ? 'error' : 'success';
+        }
+
+        function showLoading(show) {
+            document.getElementById('loading').style.display = show ? 'block' : 'none';
+            document.getElementById('capture').disabled = show;
+        }
+
+        // Initialize camera with error handling
+        async function initCamera() {
+            try {
+                const constraints = {
+                    video: {
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        facingMode: "user"
+                    }
+                };
+                
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                const video = document.getElementById('video');
+                video.srcObject = stream;
+                await video.play();
+                document.getElementById('capture').disabled = false;
+            } catch (err) {
+                console.error("Camera access error:", err);
+                showStatus("Camera access denied. Please ensure camera permissions are granted.", true);
+                document.getElementById('capture').disabled = true;
+            }
+        }
+
+        // Initialize the camera when page loads
+        document.addEventListener('DOMContentLoaded', initCamera);
+
+        // Capture and process image
+        document.getElementById('capture').addEventListener('click', async function() {
+            const video = document.getElementById('video');
+            const canvas = document.getElementById('canvas');
+            const captureButton = document.getElementById('capture');
+
+            // Ensure video is ready
+            if (video.readyState !== video.HAVE_ENOUGH_DATA) {
+                showStatus("Video stream not ready. Please wait.", true);
+                return;
+            }
+
+            try {
+                showLoading(true);
+                
+                // Capture the image
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                const context = canvas.getContext('2d');
+                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                // Prepare the data
+                const dataURL = canvas.toDataURL('image/png');
+                
+                // Send to server
+                const response = await fetch('/mark_your_attendance_out', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrftoken
+                    },
+                    body: JSON.stringify({
+                        image: dataURL,
+                        timestamp: new Date().toISOString()
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Server responded with ${response.status}`);
+                }
+
+                const data = await response.json();
+                showStatus('Attendance marked successfully!');
+                console.log(data);
+                
+                // Clear session storage and redirect after a brief delay
+                setTimeout(() => {
+                    sessionStorage.removeItem('attendanceType');
+                    window.location.href = '/';
+                }, 1500);
+
+            } catch (error) {
+                console.error('Error:', error);
+                showStatus('Error marking attendance. Please try again.', true);
+            } finally {
+                showLoading(false);
+            }
+        });
+
+        // Cleanup function
+        window.addEventListener('beforeunload', () => {
+            const video = document.getElementById('video');
+            if (video.srcObject) {
+                video.srcObject.getTracks().forEach(track => track.stop());
+            }
+        });
+    </script>
+</body>
+</html>
