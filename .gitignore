@@ -123,6 +123,7 @@ celerybeat.pid
 .venv/
 Attendance-System-Using-Face-Recognition/env/
 Attendance-System-Using-Face-Recognition/face_recognition_data/shape_predictor_68_face_landmarks.dat
+Attendance-System-Using-Face-Recognition/face_recognition_data/training_dataset
 venv/
 ENV/
 env.bak/
