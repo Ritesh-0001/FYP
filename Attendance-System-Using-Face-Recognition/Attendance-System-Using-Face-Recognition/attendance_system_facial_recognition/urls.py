@@ -47,7 +47,8 @@
 
 # ]
 
-from django.urls import path
+from django.contrib import admin
+from django.urls import path, include
 from recognition import views as recog_views
 from django.contrib.auth import views as auth_views
 from users import views as users_views
@@ -59,6 +60,7 @@ from users import views as users_views
 
 urlpatterns = [
     path('', recog_views.home, name='home'),  # Add this line
+    path('admin/', admin.site.urls),
 
     path('dashboard/', recog_views.dashboard, name='dashboard'),
     path('train/', recog_views.train, name='train'),

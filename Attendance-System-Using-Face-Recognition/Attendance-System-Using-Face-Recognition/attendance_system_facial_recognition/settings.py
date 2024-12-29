@@ -91,11 +91,12 @@ DATABASES = {
         'NAME': os.path.join(BASE_DIR, 'db.sqlite3'),
     }
 }
+CSRF_TRUSTED_ORIGINS = [
+    'https://5695-103-246-193-34.ngrok-free.app'
+]
 
 ALLOWED_HOSTS = [
-    '127.0.0.1',  # Localhost
-    '172.16.11.31',  # Your computer's IP address
-    'f6e3-103-246-193-34.ngrok-free.app'
+    '*'
 ]
 # Password validation
 # https://docs.djangoproject.com/en/2.2/ref/settings/#auth-password-validators

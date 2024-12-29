@@ -16,6 +16,9 @@ import face_recognition
 from face_recognition.face_recognition_cli import image_files_in_folder
 import pickle
 from sklearn.preprocessing import LabelEncoder
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report
+from sklearn.model_selection import cross_val_score
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
 import numpy as np
@@ -1243,70 +1246,161 @@ def mark_your_attendance_out(request):
     
     return JsonResponse({'status': 'error', 'message': 'Invalid request'}, status=400)
 
-@login_required
-def train(request):
-	if request.user.username!='admin':
-		return redirect('not-authorised')
+# @login_required
+# def train(request):
+# 	if request.user.username!='admin':
+# 		return redirect('not-authorised')
 
-	training_dir='face_recognition_data/training_dataset'
+# 	training_dir='face_recognition_data/training_dataset'
 	
 	
 	
-	count=0
-	for person_name in os.listdir(training_dir):
-		curr_directory=os.path.join(training_dir,person_name)
-		if not os.path.isdir(curr_directory):
-			continue
-		for imagefile in image_files_in_folder(curr_directory):
-			count+=1
+# 	count=0
+# 	for person_name in os.listdir(training_dir):
+# 		curr_directory=os.path.join(training_dir,person_name)
+# 		if not os.path.isdir(curr_directory):
+# 			continue
+# 		for imagefile in image_files_in_folder(curr_directory):
+# 			count+=1
 
-	X=[]
-	y=[]
-	i=0
+# 	X=[]
+# 	y=[]
+# 	i=0
 
 
-	for person_name in os.listdir(training_dir):
-		print(str(person_name))
-		curr_directory=os.path.join(training_dir,person_name)
-		if not os.path.isdir(curr_directory):
-			continue
-		for imagefile in image_files_in_folder(curr_directory):
-			print(str(imagefile))
-			image=cv2.imread(imagefile)
-			try:
-				X.append((face_recognition.face_encodings(image)[0]).tolist())
+# 	for person_name in os.listdir(training_dir):
+# 		print(str(person_name))
+# 		curr_directory=os.path.join(training_dir,person_name)
+# 		if not os.path.isdir(curr_directory):
+# 			continue
+# 		for imagefile in image_files_in_folder(curr_directory):
+# 			print(str(imagefile))
+# 			image=cv2.imread(imagefile)
+# 			try:
+# 				X.append((face_recognition.face_encodings(image)[0]).tolist())
 				
 
 				
-				y.append(person_name)
-				i+=1
-			except:
-				print("removed")
-				os.remove(imagefile)
+# 				y.append(person_name)
+# 				i+=1
+# 			except:
+# 				print("removed")
+# 				os.remove(imagefile)
 
 			
 
 
-	targets=np.array(y)
-	encoder = LabelEncoder()
-	encoder.fit(y)
-	y=encoder.transform(y)
-	X1=np.array(X)
-	print("shape: "+ str(X1.shape))
-	np.save('face_recognition_data/classes.npy', encoder.classes_)
-	svc = SVC(kernel='linear',probability=True)
-	svc.fit(X1,y)
-	svc_save_path="face_recognition_data/svc.sav"
-	with open(svc_save_path, 'wb') as f:
-		pickle.dump(svc,f)
+# 	targets=np.array(y)
+# 	encoder = LabelEncoder()
+# 	encoder.fit(y)
+# 	y=encoder.transform(y)
+# 	X1=np.array(X)
+# 	print("shape: "+ str(X1.shape))
+# 	np.save('face_recognition_data/classes.npy', encoder.classes_)
+# 	svc = SVC(kernel='linear',probability=True)
+# 	svc.fit(X1,y)
+# 	svc_save_path="face_recognition_data/svc.sav"
+# 	with open(svc_save_path, 'wb') as f:
+# 		pickle.dump(svc,f)
 
 	
-	vizualize_Data(X1,targets)
+# 	vizualize_Data(X1,targets)
 	
-	messages.success(request, f'Training Complete.')
+# 	messages.success(request, f'Training Complete.')
 
-	return render(request,"recognition/train.html")
+# 	return render(request,"recognition/train.html")
 
+@login_required
+def train(request):
+    if request.user.username != 'admin':
+        return redirect('not-authorised')
+
+    training_dir = 'face_recognition_data/training_dataset'
+    
+    # Count total images
+    count = 0
+    for person_name in os.listdir(training_dir):
+        curr_directory = os.path.join(training_dir, person_name)
+        if not os.path.isdir(curr_directory):
+            continue
+        for imagefile in image_files_in_folder(curr_directory):
+            count += 1
+
+    X = []
+    y = []
+    i = 0
+
+    # Load and process images
+    for person_name in os.listdir(training_dir):
+        print(str(person_name))
+        curr_directory = os.path.join(training_dir, person_name)
+        if not os.path.isdir(curr_directory):
+            continue
+        for imagefile in image_files_in_folder(curr_directory):
+            print(str(imagefile))
+            image = cv2.imread(imagefile)
+            try:
+                X.append((face_recognition.face_encodings(image)[0]).tolist())
+                y.append(person_name)
+                i += 1
+            except:
+                print("removed")
+                os.remove(imagefile)
+
+    # Convert to numpy arrays
+    targets = np.array(y)
+    encoder.fit(y)
+    y = encoder.transform(y)
+    X1 = np.array(X)
+    print("shape: " + str(X1.shape))
+
+    # Save classes
+    np.save('face_recognition_data/classes.npy', encoder.classes_)
+
+    # Split the data into training and testing sets
+    X_train, X_test, y_train, y_test = train_test_split(X1, y, test_size=0.2, random_state=42)
+
+    # Train the model
+    svc = SVC(kernel='linear', probability=True)
+    svc.fit(X_train, y_train)
+
+    # Evaluate the model
+    # 1. Training accuracy
+    train_accuracy = svc.score(X_train, y_train)
+    print(f"Training Accuracy: {train_accuracy:.2f}")
+
+    # 2. Testing accuracy
+    test_accuracy = svc.score(X_test, y_test)
+    print(f"Testing Accuracy: {test_accuracy:.2f}")
+
+    # 3. Cross-validation
+    cv_scores = cross_val_score(svc, X1, y, cv=5)
+    print(f"Cross-validation scores: {cv_scores}")
+    print(f"Average CV Accuracy: {cv_scores.mean():.2f} (+/- {cv_scores.std() * 2:.2f})")
+
+    # 4. Generate classification report
+    y_pred = svc.predict(X_test)
+    classification_rep = classification_report(y_test, y_pred, target_names=encoder.classes_)
+    print("Classification Report:")
+    print(classification_rep)
+
+    # Save the model
+    svc_save_path = "face_recognition_data/svc.sav"
+    with open(svc_save_path, 'wb') as f:
+        pickle.dump(svc, f)
+
+    # Visualize data
+    vizualize_Data(X1, targets)
+
+    # Store evaluation metrics in session for display in template
+    request.session['train_accuracy'] = float(train_accuracy)
+    request.session['test_accuracy'] = float(test_accuracy)
+    request.session['cv_accuracy'] = float(cv_scores.mean())
+    request.session['cv_std'] = float(cv_scores.std() * 2)
+
+    messages.success(request, f'Training Complete. Test Accuracy: {test_accuracy:.2f}')
+
+    return render(request, "recognition/train.html")
 
 @login_required
 def not_authorised(request):
