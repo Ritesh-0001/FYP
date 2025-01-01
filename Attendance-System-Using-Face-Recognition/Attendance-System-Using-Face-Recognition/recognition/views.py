@@ -38,7 +38,7 @@ from pandas.plotting import register_matplotlib_converters
 from matplotlib import rcParams
 import math
 from imutils.face_utils import rect_to_bb
-from django.views.decorators.csrf import ensure_csrf_cookie
+from django.views.decorators.csrf import ensure_csrf_cookie, csrf_exempt
 
 mpl.use('Agg')
 
@@ -281,11 +281,10 @@ from albumentations import (
     Compose, RandomBrightnessContrast, GaussNoise, 
     HorizontalFlip, Rotate, RandomGamma, Blur
 )
-
+@csrf_exempt
 def create_dataset(request, username: str, base_samples: int = 10, target_samples: int = 300):
     """
-    Handles dataset creation with image augmentation. Takes fewer base images and 
-    creates more samples through augmentation. Saves files with sequential numbering.
+    Handles dataset creation with image augmentation. Optimized for both mobile and desktop images.
     """
     if not username_present(username):
         return redirect('dashboard')
@@ -308,10 +307,16 @@ def create_dataset(request, username: str, base_samples: int = 10, target_sample
 
     elif request.method == 'POST':
         try:
+            # Add request timeout handling
+            if not request.body:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'No image data received'
+                })
+
             sample_num = request.session.get('sample_num', 0)
             total_images = request.session.get('total_images', 0)
 
-            # Check if we've reached the base sample limit
             if sample_num >= base_samples:
                 return JsonResponse({
                     'success': False,
@@ -328,23 +333,66 @@ def create_dataset(request, username: str, base_samples: int = 10, target_sample
 
             detector = dlib.get_frontal_face_detector()
 
-            # Process image data
-            data = json.loads(request.body)
-            image_data = data.get('image', '').split(',')[1]
-            image_bytes = base64.b64decode(image_data)
-            image = Image.open(io.BytesIO(image_bytes))
-            frame = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
-            frame = cv2.resize(frame, (800, 600))
-            gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            faces = detector(gray_frame, 0)
+            # Process image data with better error handling
+            try:
+                data = json.loads(request.body)
+                image_data = data.get('image', '').split(',')[1]
+                image_bytes = base64.b64decode(image_data)
+            except Exception as e:
+                return JsonResponse({
+                    'success': False,
+                    'error': f'Invalid image data: {str(e)}'
+                })
 
-            # Define augmentation pipeline
+            # Image preprocessing with memory optimization
+            try:
+                with Image.open(io.BytesIO(image_bytes)) as image:
+                    # Convert to RGB if needed
+                    if image.mode != 'RGB':
+                        image = image.convert('RGB')
+                    
+                    # Calculate new dimensions while maintaining aspect ratio
+                    max_dimension = 800
+                    ratio = min(max_dimension / image.width, max_dimension / image.height)
+                    new_size = (int(image.width * ratio), int(image.height * ratio))
+                    
+                    # Resize image
+                    image = image.resize(new_size, Image.Resampling.LANCZOS)
+                    
+                    # Convert to numpy array
+                    frame = np.array(image)
+                    frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+
+            except Exception as e:
+                return JsonResponse({
+                    'success': False,
+                    'error': f'Image preprocessing failed: {str(e)}'
+                })
+
+            # Face detection with timeout
+            try:
+                gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                faces = detector(gray_frame, 0)
+                
+                if not faces:
+                    return JsonResponse({
+                        'success': False,
+                        'error': 'No face detected in image'
+                    })
+
+            except Exception as e:
+                return JsonResponse({
+                    'success': False,
+                    'error': f'Face detection failed: {str(e)}'
+                })
+
+            # Optimized augmentation pipeline
             augmentor = Compose([
                 HorizontalFlip(p=0.5),
-                RandomBrightnessContrast(p=0.7),
-                GaussNoise(p=0.3),
+                RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.7),
+                GaussNoise(var_limit=(10.0, 50.0), p=0.3),
                 Rotate(limit=15, p=0.5),
-                RandomGamma(p=0.3),
+                RandomGamma(gamma_limit=(80, 120), p=0.3),
                 Blur(blur_limit=3, p=0.3),
             ])
 
@@ -356,21 +404,22 @@ def create_dataset(request, username: str, base_samples: int = 10, target_sample
                     if face_region.size == 0:
                         continue
 
+                    # Standardize face size
                     face_aligned = cv2.resize(face_region, (256, 256))
                     
-                    # Save original image with sequential numbering
+                    # Save original image with compression
                     total_images += 1
                     image_path = directory / f"{total_images}.jpg"
-                    cv2.imwrite(str(image_path), face_aligned)
+                    cv2.imwrite(str(image_path), face_aligned, [cv2.IMWRITE_JPEG_QUALITY, 95])
                     
-                    # Generate augmented versions
-                    augmentations_per_image = (target_samples - base_samples) // base_samples
+                    # Generate augmented versions with memory optimization
+                    augmentations_per_image = min(30, (target_samples - base_samples) // base_samples)
                     
                     for _ in range(augmentations_per_image):
                         augmented = augmentor(image=face_aligned)['image']
                         total_images += 1
                         aug_path = directory / f"{total_images}.jpg"
-                        cv2.imwrite(str(aug_path), augmented)
+                        cv2.imwrite(str(aug_path), augmented, [cv2.IMWRITE_JPEG_QUALITY, 90])
 
                     faces_processed.append({
                         'x': x, 'y': y, 'width': w, 'height': h
@@ -393,12 +442,13 @@ def create_dataset(request, username: str, base_samples: int = 10, target_sample
             })
 
         except Exception as e:
+            import traceback
+            print(f"[ERROR] Dataset creation failed: {str(e)}")
+            print(traceback.format_exc())
             return JsonResponse({
                 'success': False,
                 'error': str(e)
             })
-
-
 
 def predict(face_aligned, svc, threshold: float = 0.7) -> tuple:
     if face_aligned is None:
@@ -1310,97 +1360,234 @@ def mark_your_attendance_out(request):
 
 # 	return render(request,"recognition/train.html")
 
+# ######  old training code new#################
+
+@login_required
+# def train(request):
+#     if request.user.username != 'admin':
+#         return redirect('not-authorised')
+
+#     training_dir = 'face_recognition_data/training_dataset'
+    
+#     # Count total images
+#     count = 0
+#     for person_name in os.listdir(training_dir):
+#         curr_directory = os.path.join(training_dir, person_name)
+#         if not os.path.isdir(curr_directory):
+#             continue
+#         for imagefile in image_files_in_folder(curr_directory):
+#             count += 1
+
+#     X = []
+#     y = []
+#     i = 0
+
+#     # Load and process images
+#     for person_name in os.listdir(training_dir):
+#         print(str(person_name))
+#         curr_directory = os.path.join(training_dir, person_name)
+#         if not os.path.isdir(curr_directory):
+#             continue
+#         for imagefile in image_files_in_folder(curr_directory):
+#             print(str(imagefile))
+#             image = cv2.imread(imagefile)
+#             try:
+#                 X.append((face_recognition.face_encodings(image)[0]).tolist())
+#                 y.append(person_name)
+#                 i += 1
+#             except:
+#                 print("removed")
+#                 os.remove(imagefile)
+
+#     # Convert to numpy arrays
+#     targets = np.array(y)
+#     encoder.fit(y)
+#     y = encoder.transform(y)
+#     X1 = np.array(X)
+#     print("shape: " + str(X1.shape))
+
+#     # Save classes
+#     np.save('face_recognition_data/classes.npy', encoder.classes_)
+
+#     # Split the data into training and testing sets
+#     X_train, X_test, y_train, y_test = train_test_split(X1, y, test_size=0.2, random_state=42)
+
+#     # Train the model
+#     svc = SVC(kernel='linear', probability=True)
+#     svc.fit(X_train, y_train)
+
+#     # Evaluate the model
+#     # 1. Training accuracy
+#     train_accuracy = svc.score(X_train, y_train)
+#     print(f"Training Accuracy: {train_accuracy:.2f}")
+
+#     # 2. Testing accuracy
+#     test_accuracy = svc.score(X_test, y_test)
+#     print(f"Testing Accuracy: {test_accuracy:.2f}")
+
+#     # 3. Cross-validation
+#     cv_scores = cross_val_score(svc, X1, y, cv=5)
+#     print(f"Cross-validation scores: {cv_scores}")
+#     print(f"Average CV Accuracy: {cv_scores.mean():.2f} (+/- {cv_scores.std() * 2:.2f})")
+
+#     # 4. Generate classification report
+#     y_pred = svc.predict(X_test)
+#     classification_rep = classification_report(y_test, y_pred, target_names=encoder.classes_)
+#     print("Classification Report:")
+#     print(classification_rep)
+
+#     # Save the model
+#     svc_save_path = "face_recognition_data/svc.sav"
+#     with open(svc_save_path, 'wb') as f:
+#         pickle.dump(svc, f)
+
+#     # Visualize data
+#     vizualize_Data(X1, targets)
+
+#     # Store evaluation metrics in session for display in template
+#     request.session['train_accuracy'] = float(train_accuracy)
+#     request.session['test_accuracy'] = float(test_accuracy)
+#     request.session['cv_accuracy'] = float(cv_scores.mean())
+#     request.session['cv_std'] = float(cv_scores.std() * 2)
+
+#     messages.success(request, f'Training Complete. Test Accuracy: {test_accuracy:.2f}')
+
+#     return render(request, "recognition/train.html")
+
 @login_required
 def train(request):
-    if request.user.username != 'admin':
+    if not request.user.is_superuser:
+        messages.error(request, 'Only administrators can access the training page.')
         return redirect('not-authorised')
 
     training_dir = 'face_recognition_data/training_dataset'
+    print("Starting training process...")
     
-    # Count total images
-    count = 0
-    for person_name in os.listdir(training_dir):
-        curr_directory = os.path.join(training_dir, person_name)
-        if not os.path.isdir(curr_directory):
-            continue
-        for imagefile in image_files_in_folder(curr_directory):
-            count += 1
+    # Load processed images list
+    processed_images_path = 'face_recognition_data/processed_images.pkl'
+    try:
+        if os.path.exists(processed_images_path):
+            with open(processed_images_path, 'rb') as f:
+                processed_images = pickle.load(f)
+        else:
+            processed_images = set()
+    except Exception as e:
+        print(f"Error loading processed images list: {str(e)}")
+        processed_images = set()
+    
+    # Load existing model and data
+    try:
+        with open("face_recognition_data/svc.sav", 'rb') as f:
+            existing_model = pickle.load(f)
+        existing_classes = np.load('face_recognition_data/classes.npy', allow_pickle=True)
+        X_existing = np.load('face_recognition_data/X_data.npy', allow_pickle=True)
+        y_existing = np.load('face_recognition_data/y_data.npy', allow_pickle=True)
+        print("Loaded existing model data:")
+        print(f"Existing classes: {existing_classes}")
+        print(f"Number of existing samples: {len(X_existing)}")
+        has_existing_data = True
+    except Exception as e:
+        print(f"No existing model found or error loading model: {str(e)}")
+        has_existing_data = False
+        X_existing = []
+        y_existing = []
+        existing_model = None
+        existing_classes = []
 
-    X = []
-    y = []
-    i = 0
+    X_new = []
+    y_new = []
+    new_images_processed = False
+    new_classes_added = set()
 
-    # Load and process images
-    for person_name in os.listdir(training_dir):
-        print(str(person_name))
+    # Get list of folders in training directory
+    people_folders = [f for f in os.listdir(training_dir) 
+                     if os.path.isdir(os.path.join(training_dir, f))]
+    
+    # First, identify new people/classes
+    new_people = [person for person in people_folders 
+                 if person not in existing_classes]
+    
+    if not new_people:
+        messages.info(request, 'No new people to train. All existing folders are already trained.')
+        return render(request, "recognition/train.html")
+    
+    print(f"Found new people to train: {new_people}")
+
+    # Process only new people's folders
+    for person_name in new_people:
         curr_directory = os.path.join(training_dir, person_name)
-        if not os.path.isdir(curr_directory):
-            continue
+        print(f"Processing new person: {person_name}")
+        new_classes_added.add(person_name)
+        
         for imagefile in image_files_in_folder(curr_directory):
-            print(str(imagefile))
+            abs_path = os.path.abspath(imagefile)
+            if abs_path in processed_images:
+                continue
+
+            print(f"Processing new image: {imagefile}")
             image = cv2.imread(imagefile)
+
+            if image is None:
+                print(f"Failed to load image: {imagefile}")
+                continue
+
             try:
-                X.append((face_recognition.face_encodings(image)[0]).tolist())
-                y.append(person_name)
-                i += 1
-            except:
-                print("removed")
-                os.remove(imagefile)
+                face_encoding = face_recognition.face_encodings(image)[0].tolist()
+                X_new.append(face_encoding)
+                y_new.append(person_name)
+                processed_images.add(abs_path)
+                new_images_processed = True
+            except Exception as e:
+                print(f"Error processing {imagefile}: {str(e)}")
+                continue
 
-    # Convert to numpy arrays
-    targets = np.array(y)
-    encoder.fit(y)
-    y = encoder.transform(y)
-    X1 = np.array(X)
-    print("shape: " + str(X1.shape))
+    # If no new data, return early
+    if not new_images_processed:
+        messages.info(request, 'No new images were successfully processed')
+        return render(request, "recognition/train.html")
 
-    # Save classes
-    np.save('face_recognition_data/classes.npy', encoder.classes_)
+    # Save updated list of processed images
+    with open(processed_images_path, 'wb') as f:
+        pickle.dump(processed_images, f)
 
-    # Split the data into training and testing sets
-    X_train, X_test, y_train, y_test = train_test_split(X1, y, test_size=0.2, random_state=42)
+    # Combine new data with existing data and train
+    print("Adding new person data to model...")
+    if has_existing_data:
+        X = np.vstack((X_existing, np.array(X_new)))
+        y = np.concatenate((y_existing, np.array(y_new)))
+    else:
+        X = np.array(X_new)
+        y = np.array(y_new)
 
-    # Train the model
+    # Train new model with all data
+    print("Training updated model...")
     svc = SVC(kernel='linear', probability=True)
-    svc.fit(X_train, y_train)
+    svc.fit(X, y)
 
-    # Evaluate the model
-    # 1. Training accuracy
-    train_accuracy = svc.score(X_train, y_train)
-    print(f"Training Accuracy: {train_accuracy:.2f}")
-
-    # 2. Testing accuracy
-    test_accuracy = svc.score(X_test, y_test)
-    print(f"Testing Accuracy: {test_accuracy:.2f}")
-
-    # 3. Cross-validation
-    cv_scores = cross_val_score(svc, X1, y, cv=5)
-    print(f"Cross-validation scores: {cv_scores}")
-    print(f"Average CV Accuracy: {cv_scores.mean():.2f} (+/- {cv_scores.std() * 2:.2f})")
-
-    # 4. Generate classification report
-    y_pred = svc.predict(X_test)
-    classification_rep = classification_report(y_test, y_pred, target_names=encoder.classes_)
-    print("Classification Report:")
-    print(classification_rep)
-
-    # Save the model
-    svc_save_path = "face_recognition_data/svc.sav"
-    with open(svc_save_path, 'wb') as f:
+    # Save updated model and data
+    print("Saving updated model and data...")
+    np.save('face_recognition_data/X_data.npy', X)
+    np.save('face_recognition_data/y_data.npy', y)
+    np.save('face_recognition_data/classes.npy', np.unique(y))
+    
+    with open("face_recognition_data/svc.sav", 'wb') as f:
         pickle.dump(svc, f)
 
-    # Visualize data
-    vizualize_Data(X1, targets)
-
-    # Store evaluation metrics in session for display in template
-    request.session['train_accuracy'] = float(train_accuracy)
-    request.session['test_accuracy'] = float(test_accuracy)
-    request.session['cv_accuracy'] = float(cv_scores.mean())
-    request.session['cv_std'] = float(cv_scores.std() * 2)
-
-    messages.success(request, f'Training Complete. Test Accuracy: {test_accuracy:.2f}')
+    # Calculate accuracy metrics
+    accuracy = svc.score(X, y)
+    
+    print(f"Model accuracy: {accuracy:.2f}")
+    print(f"Added {len(new_people)} new people: {', '.join(new_people)}")
+    print(f"Processed {len(X_new)} new images")
+    print(f"Total samples after update: {len(X)}")
+    print(f"Total classes after update: {len(np.unique(y))}")
+    
+    messages.success(request, 
+        f'Successfully added {len(new_people)} new people ({", ".join(new_people)}) '
+        f'with {len(X_new)} images. Current accuracy: {accuracy:.2f}')
 
     return render(request, "recognition/train.html")
+
 
 @login_required
 def not_authorised(request):

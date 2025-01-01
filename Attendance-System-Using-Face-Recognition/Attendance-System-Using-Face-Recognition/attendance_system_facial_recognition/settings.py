@@ -79,7 +79,8 @@ TEMPLATES = [
 WSGI_APPLICATION = 'attendance_system_facial_recognition.wsgi.application'
 
 CSRF_TRUSTED_ORIGINS = [
-    'https://f6e3-103-246-193-34.ngrok-free.app',  # Replace with your ngrok URL
+    'https://6a7a-103-246-193-34.ngrok-free.app
+    ',  # Replace with your ngrok URL
     'http://127.0.0.1:8000',  # Localhost for development (optional)
 ]
 # Database
@@ -91,11 +92,12 @@ DATABASES = {
         'NAME': os.path.join(BASE_DIR, 'db.sqlite3'),
     }
 }
-CSRF_TRUSTED_ORIGINS = [
-    'https://5695-103-246-193-34.ngrok-free.app'
-]
+# settings.py
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10485760  # 10MB
+FILE_UPLOAD_MAX_MEMORY_SIZE = 10485760  # 10MB
 
 ALLOWED_HOSTS = [
+    'https://22bc-103-246-193-34.ngrok-free.app',  # Replace with your ngrok URL
     '*'
 ]
 # Password validation
